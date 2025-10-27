@@ -1,0 +1,140 @@
+---
+title: "2025 Fantasy Football Data"
+author: "Manny T"
+date: "2025-10-27"
+output: html_document
+---
+
+# NFL Offensive Analytics | 2025
+*R, nflfastR, ggplot2, ggimage*
+
+This notebook presents four key visualizations to analyze team offensive tendencies and efficiency for the 2025 NFL season using play-by-play data.
+
+---
+
+## Loading Play-by-Play Data
+```{r}
+library(nflfastR)
+library(tidyverse)
+library(ggimage)
+library(ggrepel)
+
+pbp <- load_pbp(2025)
+data("teams_colors_logos")
+```
+
+---
+
+## 1. Scatter: Passing Rate vs Total Plays
+
+*Visualizes each team’s offensive style (pass-heavy, run-heavy, balanced) and total offensive play volume. Logos show team identity.*
+
+```{r}
+team_summary <- pbp %>%
+filter(play_type %in% c("pass", "run")) %>%
+group_by(posteam) %>%
+summarise(
+total_passes = sum(play_type == "pass", na.rm = TRUE),
+total_runs = sum(play_type == "run", na.rm = TRUE)
+) %>%
+mutate(
+pass_rate = total_passes / (total_passes + total_runs) * 100,
+total_plays = total_passes + total_runs,
+style = case_when(
+pass_rate > 60 ~ "Pass-Heavy",
+pass_rate < 50 ~ "Run-Heavy",
+TRUE ~ "Balanced"
+)
+) %>%
+left_join(teams_colors_logos, by = c("posteam" = "team_abbr"))
+
+ggplot(team_summary, aes(x = total_plays, y = pass_rate)) +
+geom_image(aes(image = team_logo_espn), size = 0.07, asp = 1.5) +
+labs(
+title = "Passing Rate vs Total Offensive Plays (2025)",
+subtitle = "Each logo represents an NFL team",
+x = "Total Offensive Plays",
+y = "Passing Rate (%)"
+) +
+theme_minimal(base_size = 14) +
+facet_wrap(~style) +
+theme(
+strip.text = element_text(face = "bold", size = 12),
+axis.title = element_text(face = "bold"),
+panel.grid.minor = element_blank()
+)
+```
+
+
+---
+
+## 2. Top 10 Passing Yards Teams
+
+*Highlights NFL’s passing leaders using a bar chart with team logos and colors for quick visual comparison.*
+
+```{r}
+team_yards <- pbp %>%
+filter(play_type %in% c("pass", "run")) %>%
+group_by(posteam, play_type) %>%
+summarise(total_yards = sum(yards_gained, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(names_from = play_type, values_from = total_yards, values_fill = 0) %>%
+left_join(teams_colors_logos, by = c("posteam" = "team_abbr"))
+
+top_pass <- team_yards %>%
+arrange(desc(pass)) %>%
+slice(1:10) %>%
+mutate(posteam = factor(posteam, levels = rev(posteam)))
+
+ggplot(top_pass, aes(x = posteam, y = pass, fill = team_color)) +
+geom_col(show.legend = FALSE) +
+geom_image(aes(image = team_logo_espn), size = 0.05, by = "width", nudge_y = 50) +
+coord_flip() +
+labs(title = "Top 10 Passing Yards Teams (2025)", y = "Passing Yards", x = "") +
+scale_fill_identity() +
+theme_minimal(base_size = 14)
+```
+
+---
+
+## 3. Top 10 Rushing Yards Teams
+
+*Shows NFL running dominance with a bar chart for rushing yards, colored by official team palette and logo.*
+
+```{r}
+top_run <- team_yards %>%
+arrange(desc(run)) %>%
+slice(1:10) %>%
+mutate(posteam = factor(posteam, levels = rev(posteam)))
+
+ggplot(top_run, aes(x = posteam, y = run, fill = team_color)) +
+geom_col(show.legend = FALSE) +
+geom_image(aes(image = team_logo_espn), size = 0.05, by = "width", nudge_y = 20) +
+coord_flip() +
+labs(title = "Top 10 Rushing Yards Teams (2025)", y = "Rushing Yards", x = "") +
+scale_fill_identity() +
+theme_minimal(base_size = 14)
+```
+
+---
+
+## 4. Team Efficiency: EPA per Play
+
+*Compares team efficiency for passing and running using EPA (Expected Points Added) by play, split by play type.*
+
+
+```{r}
+team_epa <- pbp %>%
+filter(play_type %in% c("pass", "run")) %>%
+group_by(posteam, play_type) %>%
+summarise(avg_epa = mean(epa, na.rm = TRUE), .groups = "drop") %>%
+left_join(teams_colors_logos, by = c("posteam" = "team_abbr"))
+
+ggplot(team_epa, aes(x = reorder(posteam, avg_epa), y = avg_epa, fill = play_type)) +
+geom_col(position = "dodge") +
+scale_fill_manual(values = c("pass" = "#1f78b4", "run" = "#33a02c")) +
+coord_flip() +
+labs(title = "Team Efficiency: EPA per Play (Pass vs Run, 2025)",
+x = "", y = "Average EPA") +
+theme_minimal(base_size = 14)
+```
+
